@@ -1,0 +1,31 @@
+# dependencies
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# env
+.env
+.env.*
+!.env.example
+
+# build / generated
+artifacts/
+cache/
+dist/
+frontend/dist/
+
+# circom generated artifacts
+circuits/build/
+circuits/keys/
+*.ptau
+*.zkey
+*.wtns
+
+# hardhat ignition local deployment state
+ignition/deployments/
+
+# local circom compiler clone
+circom/
+
+# misc
+.DS_Store
