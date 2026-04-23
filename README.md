@@ -1,57 +1,87 @@
-# Sample Hardhat 3 Beta Project (`node:test` and `viem`)
+# ZK-KYA: Zero-Knowledge Authorization for AI Agents
 
-This project showcases a Hardhat 3 Beta project using the native Node.js test runner (`node:test`) and the `viem` library for Ethereum interactions.
+ZK-KYA is a privacy-preserving authorization layer that allows AI agents to prove they are authorized to perform actions **without revealing underlying credentials**.
 
-To learn more about the Hardhat 3 Beta, please visit the [Getting Started guide](https://hardhat.org/docs/getting-started#getting-started-with-hardhat-3). To share your feedback, join our [Hardhat 3 Beta](https://hardhat.org/hardhat3-beta-telegram-group) Telegram group or [open an issue](https://github.com/NomicFoundation/hardhat/issues/new) in our GitHub issue tracker.
+Instead of exposing sensitive permission data, the system:
+- Stores a **Poseidon commitment** on-chain
+- Uses **Groth16 zero-knowledge proofs**
+- Verifies authorization **on-chain via smart contracts**
 
-## Project Overview
+---
 
-This example project includes:
+## Demo Overview
 
-- A simple Hardhat configuration file.
-- Foundry-compatible Solidity unit tests.
-- TypeScript integration tests using [`node:test`](nodejs.org/api/test.html), the new Node.js native test runner, and [`viem`](https://viem.sh/).
-- Examples demonstrating how to connect to different types of networks, including locally simulating OP mainnet.
+This project simulates a full end-to-end flow:
 
-## Usage
+1. **User → Agent**
+   - User issues a scoped credential
+   - Commitment is stored on-chain
 
-### Running Tests
+2. **Agent → Verifier**
+   - Agent generates a zk proof for a request
+   - Proof verifies policy compliance without revealing the credential
 
-To run all the tests in the project, execute the following command:
+3. **On-chain Verification**
+   - Smart contract verifies the proof
+   - Action is approved or rejected
 
-```shell
-npx hardhat test
-```
+---
 
-You can also selectively run the Solidity or `node:test` tests:
+## Key Features
 
-```shell
-npx hardhat test solidity
-npx hardhat test nodejs
-```
+- Privacy-preserving authorization
+- On-chain commitment registry
+- Groth16 zero-knowledge proofs
+- Agent-based interaction model
+- Finance demo (payment authorization)
+- Healthcare demo (record access)
 
-### Make a deployment to Sepolia
+---
 
-This project includes an example Ignition module to deploy the contract. You can deploy this module to a locally simulated chain or to Sepolia.
+## Tech Stack
 
-To run the deployment to a local chain:
+- Circom + snarkjs
+- Solidity
+- Hardhat
+- Node.js + Express
+- React
 
-```shell
-npx hardhat ignition deploy ignition/modules/Counter.ts
-```
+---
 
-To run the deployment to Sepolia, you need an account with funds to send the transaction. The provided Hardhat configuration includes a Configuration Variable called `SEPOLIA_PRIVATE_KEY`, which you can use to set the private key of the account you want to use.
+## Example Metrics
 
-You can set the `SEPOLIA_PRIVATE_KEY` variable using the `hardhat-keystore` plugin or by setting it as an environment variable.
+- Issuance gas: ~53.9k
+- Witness generation: ~104 ms
+- Proof generation: ~500 ms
+- On-chain verification call: ~16 ms
+- Proof size: ~807 bytes
 
-To set the `SEPOLIA_PRIVATE_KEY` config variable using `hardhat-keystore`:
+---
 
-```shell
-npx hardhat keystore set SEPOLIA_PRIVATE_KEY
-```
+## Architecture
 
-After setting the variable, you can run the deployment with the Sepolia network:
+User → Credential Issuance → Commitment Registry  
+Agent → ZK Proof Generation → Verifier Contract  
+Verifier → Accept / Reject  
 
-```shell
-npx hardhat ignition deploy --network sepolia ignition/modules/Counter.ts
-```
+---
+
+## Contribution
+
+We built a privacy-preserving credential delegation layer for AI agents using on-chain commitments and zero-knowledge proofs, enabling agents to prove authorization without revealing the underlying credential.
+
+---
+
+## Future Work
+
+- Replay protection / nullifiers
+- Credential revocation
+- More expressive policy formats
+- Production-grade key management
+- Real agent integration
+
+---
+
+## Authors
+
+Built as part of a blockchain and zero-knowledge systems project.
