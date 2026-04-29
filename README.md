@@ -127,6 +127,32 @@ zk-kya/
 
 ---
 
+## 🔧 First-Time Setup
+
+The ZK circuit must be compiled and the Groth16 trusted setup must be run before the backend can generate proofs. This is a one-time step per clone.
+
+**Prerequisites:** [`circom`](https://docs.circom.io/getting-started/installation/) and [`snarkjs`](https://github.com/iden3/snarkjs) must be available on your PATH.
+
+```bash
+# Install snarkjs globally if you haven't already
+npm install -g snarkjs
+
+# From the project root:
+npm install
+npm run setup:circuit
+```
+
+`npm run setup:circuit` does the following automatically:
+
+1. Downloads the Hermez Powers of Tau file (`powersOfTau28_hez_final_12.ptau`, ~288 MB, cached after first run)
+2. Compiles `circuits/credentialAuthorization.circom` → `.r1cs`, `.wasm`, `.sym`
+3. Runs the Groth16 phase-2 ceremony → `circuits/keys/credentialAuthorization_final.zkey`
+4. Exports the verification key → `circuits/keys/verification_key.json`
+
+The build outputs land in `circuits/build/` and `circuits/keys/`, both of which are gitignored. **Do not start the backend until this step completes.**
+
+---
+
 ## ⚙️ Setup
 
 **1. Clone repo**
@@ -137,17 +163,29 @@ cd ZK-KYA-Auth-Layer
 
 **2. Install dependencies**
 ```bash
+npm install
 cd backend && npm install
 cd ../frontend && npm install
 ```
 
-**3. Run backend**
+**3. Run circuit setup** *(first time only — see First-Time Setup above)*
 ```bash
-cd backend
-node server.js
+npm run setup:circuit
 ```
 
-**4. Run frontend**
+**4. Start a local Hardhat node and deploy contracts**
+```bash
+npx hardhat node          # in one terminal
+node scripts/deploy.cjs   # in another terminal (writes deployments.json)
+```
+
+**5. Run backend**
+```bash
+cd backend
+node server.cjs
+```
+
+**6. Run frontend**
 ```bash
 cd frontend
 npm run dev

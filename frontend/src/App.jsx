@@ -2,6 +2,34 @@ import { useState } from "react";
 import axios from "axios";
 import "./App.css";
 
+function formatTime(date) {
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function formatDetails(entry) {
+  if (entry.operation === "Issue Credential") {
+    if (entry.success) return `Gas: ${Number(entry.gasUsed).toLocaleString()}`;
+    return entry.error || "Failed";
+  }
+  // Authorize Payment
+  if (entry.success) {
+    const parts = [];
+    if (entry.proofMs != null) parts.push(`Proof: ${entry.proofMs} ms`);
+    if (entry.verifyMs != null) parts.push(`Verify: ${entry.verifyMs} ms`);
+    return parts.join(" · ") || "Verified";
+  }
+  if (entry.reason === "proof_rejected") {
+    const parts = [];
+    if (entry.proofMs != null) parts.push(`Proof: ${entry.proofMs} ms`);
+    return parts.length ? `Rejected (${parts.join(" · ")})` : "Proof rejected";
+  }
+  return entry.error || "Server error";
+}
+
 export default function App() {
   const [mode, setMode] = useState("finance");
   const [taskLabel, setTaskLabel] = useState("Pay Utility Bill");
@@ -10,6 +38,7 @@ export default function App() {
   const [requestedAmount, setRequestedAmount] = useState(50);
   const [loadingIssue, setLoadingIssue] = useState(false);
   const [loadingAuth, setLoadingAuth] = useState(false);
+  const [auditLog, setAuditLog] = useState([]);
 
   const [liveMetrics, setLiveMetrics] = useState({
     issuanceGas: null,
@@ -53,8 +82,46 @@ export default function App() {
         ...prev,
         issuanceGas: res.data.gasUsed || null,
       }));
+
+      setAuditLog((prev) => [
+        {
+          id: Date.now(),
+          timestamp: new Date(),
+          operation: "Issue Credential",
+          scenario: mode,
+          success: true,
+          gasUsed: res.data.gasUsed ?? null,
+          txHash: res.data.txHash ?? null,
+          proofMs: null,
+          witnessMs: null,
+          verifyMs: null,
+          verified: null,
+          reason: null,
+          error: null,
+        },
+        ...prev,
+      ]);
     } catch (err) {
-      alert(err?.response?.data?.error || err.message);
+      const errMsg = err?.response?.data?.error || err.message;
+      alert(errMsg);
+      setAuditLog((prev) => [
+        {
+          id: Date.now(),
+          timestamp: new Date(),
+          operation: "Issue Credential",
+          scenario: mode,
+          success: false,
+          gasUsed: null,
+          txHash: null,
+          proofMs: null,
+          witnessMs: null,
+          verifyMs: null,
+          verified: null,
+          reason: null,
+          error: errMsg,
+        },
+        ...prev,
+      ]);
     }
 
     setLoadingIssue(false);
@@ -99,18 +166,58 @@ export default function App() {
           constraints: res.data.metrics.constraints ?? prev.constraints,
         }));
       }
-    } catch (_err) {
-      setAuthResult({
+
+      setAuditLog((prev) => [
+        {
+          id: Date.now(),
+          timestamp: new Date(),
+          operation: "Authorize Payment",
+          scenario: mode,
+          success: res.data.verified === true,
+          gasUsed: null,
+          txHash: null,
+          proofMs: res.data.metrics?.proofMs ?? null,
+          witnessMs: res.data.metrics?.witnessMs ?? null,
+          verifyMs: res.data.metrics?.verifyMs ?? null,
+          verified: res.data.verified ?? null,
+          reason: res.data.reason ?? null,
+          error: res.data.error ?? null,
+        },
+        ...prev,
+      ]);
+    } catch (err) {
+      const result = {
         ok: false,
-        verified: false,
-        error: "Request exceeds credential limits",
-      });
+        error: err?.response?.data?.error || err.message,
+        reason: "server_error",
+      };
+      setAuthResult(result);
+      setAuditLog((prev) => [
+        {
+          id: Date.now(),
+          timestamp: new Date(),
+          operation: "Authorize Payment",
+          scenario: mode,
+          success: false,
+          gasUsed: null,
+          txHash: null,
+          proofMs: null,
+          witnessMs: null,
+          verifyMs: null,
+          verified: false,
+          reason: "server_error",
+          error: result.error,
+        },
+        ...prev,
+      ]);
     }
 
     setLoadingAuth(false);
   };
 
-  const verified = authResult?.verified === true;
+  const isAuthorized = authResult?.ok === true && authResult?.verified === true;
+  const isProofRejected = authResult?.ok === true && authResult?.verified === false;
+  const isServerError = authResult?.ok === false;
   const isFinance = mode === "finance";
 
   const modeTitle = isFinance ? "Authorize Payment" : "Authorize Record Access";
@@ -411,20 +518,38 @@ export default function App() {
             )}
 
             {authResult && (
-              <div className={`status-card ${verified ? "success" : "error"}`}>
+              <div
+                className={`status-card ${
+                  isAuthorized
+                    ? "success"
+                    : isServerError
+                    ? "error"
+                    : "warning"
+                }`}
+              >
                 <div className="status-header">
-                  <div className="status-icon">{verified ? "✅" : "❌"}</div>
+                  <div className="status-icon">
+                    {isAuthorized ? "✅" : isServerError ? "❌" : "⚠️"}
+                  </div>
                   <div>
-                    <h3>{verified ? "Authorized" : "Rejected"}</h3>
+                    <h3>
+                      {isAuthorized
+                        ? "Authorized"
+                        : isServerError
+                        ? "Server Error"
+                        : "Proof Rejected"}
+                    </h3>
                     <p>
-                      {verified
+                      {isAuthorized
                         ? "Proof verified on-chain successfully."
-                        : "Authorization failed due to invalid or out-of-scope request."}
+                        : isServerError
+                        ? "A server-side error prevented the proof from completing."
+                        : "The proof was generated but the on-chain verifier rejected it."}
                     </p>
                   </div>
                 </div>
 
-                {verified ? (
+                {isAuthorized && (
                   <div className="result-grid compact">
                     <div className="result-item">
                       <span className="result-label">Mode</span>
@@ -447,10 +572,16 @@ export default function App() {
                       </div>
                     )}
                   </div>
-                ) : (
-                  <div className="error-box">
-                    Request exceeds credential limits
+                )}
+
+                {isProofRejected && (
+                  <div className="warning-box">
+                    Request exceeds credential limits or scope mismatch.
                   </div>
+                )}
+
+                {isServerError && (
+                  <div className="error-box">{authResult.error}</div>
                 )}
 
                 <details className="details-block">
@@ -484,6 +615,71 @@ export default function App() {
             structure and helps prevent identical credentials from collapsing to
             the same commitment.
           </p>
+        </section>
+
+        <section className="audit-log-card">
+          <div className="agent-tasks-header">
+            <div>
+              <p className="eyebrow">Session Activity</p>
+              <h3>Agent Audit Log</h3>
+            </div>
+            {auditLog.length > 0 && (
+              <button
+                className="clear-log-button"
+                onClick={() => setAuditLog([])}
+              >
+                Clear Log
+              </button>
+            )}
+          </div>
+
+          {auditLog.length === 0 ? (
+            <p className="audit-log-empty">
+              No activity yet. Issue a credential to get started.
+            </p>
+          ) : (
+            <div className="audit-table-wrap">
+              <table className="audit-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Operation</th>
+                    <th>Scenario</th>
+                    <th>Result</th>
+                    <th>Details</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditLog.map((entry) => (
+                    <tr
+                      key={entry.id}
+                      className={
+                        entry.success
+                          ? "audit-row-success"
+                          : "audit-row-failure"
+                      }
+                    >
+                      <td className="audit-cell-time">
+                        {formatTime(entry.timestamp)}
+                      </td>
+                      <td>{entry.operation}</td>
+                      <td className="audit-cell-scenario">
+                        {entry.scenario === "finance"
+                          ? "Finance"
+                          : "Healthcare"}
+                      </td>
+                      <td className="audit-cell-result">
+                        {entry.success ? "✓ Success" : "✗ Failed"}
+                      </td>
+                      <td className="audit-cell-details">
+                        {formatDetails(entry)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       </main>
     </div>

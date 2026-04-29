@@ -1,14 +1,28 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+interface IGroth16Verifier {
+    function verifyProof(
+        uint[2] calldata _pA,
+        uint[2][2] calldata _pB,
+        uint[2] calldata _pC,
+        uint[5] calldata _pubSignals
+    ) external view returns (bool);
+}
+
 contract CredentialRegistry {
     mapping(uint256 => bool) public registeredCommitments;
+    address public verifier;
 
     event CredentialIssued(
         address indexed issuer,
         address indexed agent,
         uint256 indexed commitment
     );
+
+    constructor(address _verifier) {
+        verifier = _verifier;
+    }
 
     function getMessageHash(
         address issuer,
@@ -121,5 +135,24 @@ contract CredentialRegistry {
 
     function isRegistered(uint256 commitment) external view returns (bool) {
         return registeredCommitments[commitment];
+    }
+
+    // Public signals layout (matches credentialAuthorization.circom):
+    //   [0] commitment
+    //   [1] requestedService
+    //   [2] requestedAction
+    //   [3] requestedAmount
+    //   [4] currentTime
+    function verifyProof(
+        uint[2] calldata _pA,
+        uint[2][2] calldata _pB,
+        uint[2] calldata _pC,
+        uint[5] calldata _pubSignals
+    ) external view returns (bool) {
+        uint256 commitment = _pubSignals[0];
+        if (!registeredCommitments[commitment]) {
+            return false;
+        }
+        return IGroth16Verifier(verifier).verifyProof(_pA, _pB, _pC, _pubSignals);
     }
 }

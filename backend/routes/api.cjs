@@ -7,7 +7,6 @@ const { buildCredential } = require("../../scripts/credentialSchema.cjs");
 const { createIssuancePayload } = require("../../scripts/createIssuancePayload.cjs");
 const { addressToBigInt } = require("../../scripts/hashCredential.cjs");
 const { getRegistryContract } = require("../services/registryService.cjs");
-const { getVerifierContract } = require("../services/verifierService.cjs");
 
 const router = express.Router();
 
@@ -70,7 +69,7 @@ router.post("/issue-credential", async (req, res) => {
 
     if (mode === "healthcare") {
       service = 2;
-      action = 1;
+      action = 2;
       maxAmount = 0;
     } else {
       service = 1;
@@ -125,7 +124,7 @@ router.post("/issue-credential", async (req, res) => {
 
 router.post("/authorize-payment", async (req, res) => {
   try {
-    const verifier = getVerifierContract();
+    const registry = getRegistryContract();
 
     const mode = req.body.mode || "finance";
     const credential = req.body.credential;
@@ -138,7 +137,7 @@ router.post("/authorize-payment", async (req, res) => {
 
     if (mode === "healthcare") {
       requestedService = 2;
-      requestedAction = 1;
+      requestedAction = 2;
       requestedAmount = 0;
     } else {
       requestedService = 1;
@@ -191,12 +190,12 @@ router.post("/authorize-payment", async (req, res) => {
     const { pA, pB, pC, pubSignals } = toSolidityCallData(proof, publicSignals);
 
     const verifyStart = Date.now();
-    const verified = await verifier.verifyProof(pA, pB, pC, pubSignals);
+    const verified = await registry.verifyProof(pA, pB, pC, pubSignals);
     const verifyMs = Date.now() - verifyStart;
 
     const proofSize = fs.statSync(proofPath).size;
 
-    return res.json({
+    const response = {
       ok: true,
       mode,
       verified,
@@ -210,12 +209,19 @@ router.post("/authorize-payment", async (req, res) => {
         proofSize,
         constraints: 890,
       },
-    });
-  } catch (_err) {
-    return res.json({
-      ok: true,
-      verified: false,
-      error: "Request exceeds allowed limits or is invalid",
+    };
+
+    if (!verified) {
+      response.reason = "proof_rejected";
+    }
+
+    return res.json(response);
+  } catch (err) {
+    console.error("AUTHORIZE ERROR:", err.message);
+    return res.status(500).json({
+      ok: false,
+      error: err.message,
+      reason: "server_error",
     });
   }
 });
