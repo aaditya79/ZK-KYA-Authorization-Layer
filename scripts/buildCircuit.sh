@@ -25,12 +25,19 @@ echo ""
 # ── Step 2: Powers of Tau (phase 1) ───────────────────────────────────────────
 echo "[2/6] Checking Powers of Tau file..."
 if [ -f "$PTAU_FILE" ]; then
-  echo "      Found: $PTAU_FILE (skipping download)"
+  echo "      Found: $PTAU_FILE (skipping generation)"
 else
-  echo "      Downloading powersOfTau28_hez_final_12.ptau (~288 MB)..."
-  echo "      Source: $PTAU_URL"
-  curl -L --progress-bar -o "$PTAU_FILE" "$PTAU_URL"
-  echo "      Download complete."
+  echo "      Generating local powers of tau (bn128, power 12)..."
+  snarkjs powersoftau new bn128 12 "$PROJECT_ROOT/pot12_0000.ptau" -v
+  echo "zk-kya-demo-entropy" | snarkjs powersoftau contribute \
+    "$PROJECT_ROOT/pot12_0000.ptau" \
+    "$PROJECT_ROOT/pot12_0001.ptau" \
+    --name="ZK-KYA Dev" -v
+  snarkjs powersoftau prepare phase2 \
+    "$PROJECT_ROOT/pot12_0001.ptau" \
+    "$PTAU_FILE" -v
+  rm -f "$PROJECT_ROOT/pot12_0000.ptau" "$PROJECT_ROOT/pot12_0001.ptau"
+  echo "      Generated: $PTAU_FILE"
 fi
 echo ""
 
@@ -66,12 +73,26 @@ echo "zk-kya-demo-entropy" | snarkjs zkey contribute \
 echo "      Final zkey: $KEYS_DIR/${CIRCUIT_NAME}_final.zkey"
 echo ""
 
-# ── Step 6: Export verification key ──────────────────────────────────────────
-echo "[6/6] Exporting verification key..."
+# ── Step 6: Export Groth16 verification key ──────────────────────────────────
+echo "[6/7] Exporting Groth16 verification key..."
 snarkjs zkey export verificationkey \
   "$KEYS_DIR/${CIRCUIT_NAME}_final.zkey" \
   "$KEYS_DIR/verification_key.json"
 echo "      Verification key: $KEYS_DIR/verification_key.json"
+echo ""
+
+# ── Step 7: PLONK setup + verification key (no trusted setup required) ────────
+echo "[7/7] PLONK setup (universal, no per-circuit ceremony needed)..."
+snarkjs plonk setup \
+  "$BUILD_DIR/$CIRCUIT_NAME.r1cs" \
+  "$PTAU_FILE" \
+  "$KEYS_DIR/${CIRCUIT_NAME}_plonk.zkey"
+echo "      PLONK zkey: $KEYS_DIR/${CIRCUIT_NAME}_plonk.zkey"
+
+snarkjs zkey export verificationkey \
+  "$KEYS_DIR/${CIRCUIT_NAME}_plonk.zkey" \
+  "$KEYS_DIR/plonk_verification_key.json"
+echo "      PLONK vkey: $KEYS_DIR/plonk_verification_key.json"
 echo ""
 
 # ── Summary ───────────────────────────────────────────────────────────────────
@@ -82,14 +103,15 @@ echo ""
 echo "  WASM witness generator:"
 echo "    $BUILD_DIR/${CIRCUIT_NAME}_js/$CIRCUIT_NAME.wasm"
 echo ""
-echo "  Final proving key:"
-echo "    $KEYS_DIR/${CIRCUIT_NAME}_final.zkey"
+echo "  Groth16 proving key:  $KEYS_DIR/${CIRCUIT_NAME}_final.zkey"
+echo "  Groth16 vkey:         $KEYS_DIR/verification_key.json"
 echo ""
-echo "  Verification key:"
-echo "    $KEYS_DIR/verification_key.json"
+echo "  PLONK proving key:    $KEYS_DIR/${CIRCUIT_NAME}_plonk.zkey"
+echo "  PLONK vkey:           $KEYS_DIR/plonk_verification_key.json"
 echo ""
-echo "  NOTE: This trusted setup uses a single deterministic contribution"
+echo "  NOTE: Groth16 trusted setup uses a single deterministic contribution"
 echo "  and is suitable for development and demo use only."
+echo "  PLONK requires no per-circuit ceremony."
 echo ""
 echo "  You can now start the backend: cd backend && node server.cjs"
 echo ""

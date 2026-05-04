@@ -15,6 +15,9 @@ function formatDetails(entry) {
     if (entry.success) return `Gas: ${Number(entry.gasUsed).toLocaleString()}`;
     return entry.error || "Failed";
   }
+  if (entry.operation === "Demo: Expired Credential") {
+    return entry.reason === "expired_credential" ? "Rejected: credential expired" : entry.reason || "Rejected";
+  }
   // Authorize Payment
   if (entry.success) {
     const parts = [];
@@ -22,6 +25,7 @@ function formatDetails(entry) {
     if (entry.verifyMs != null) parts.push(`Verify: ${entry.verifyMs} ms`);
     return parts.join(" · ") || "Verified";
   }
+  if (entry.reason === "constraint_violation") return "Rejected: constraint violation (exceeded limits)";
   if (entry.reason === "proof_rejected") {
     const parts = [];
     if (entry.proofMs != null) parts.push(`Proof: ${entry.proofMs} ms`);
@@ -40,6 +44,11 @@ export default function App() {
   const [loadingAuth, setLoadingAuth] = useState(false);
   const [auditLog, setAuditLog] = useState([]);
 
+  const [loadingExpired, setLoadingExpired] = useState(false);
+  const [expiredResult, setExpiredResult] = useState(null);
+  const [loadingBenchmark, setLoadingBenchmark] = useState(false);
+  const [benchmarkResult, setBenchmarkResult] = useState(null);
+
   const [liveMetrics, setLiveMetrics] = useState({
     issuanceGas: null,
     witnessMs: null,
@@ -47,6 +56,7 @@ export default function App() {
     verifyMs: null,
     proofSize: null,
     constraints: 890,
+    verifyGas: null,
   });
 
   const runAgentTaskPreset = (task) => {
@@ -164,6 +174,7 @@ export default function App() {
           verifyMs: res.data.metrics.verifyMs ?? prev.verifyMs,
           proofSize: res.data.metrics.proofSize ?? prev.proofSize,
           constraints: res.data.metrics.constraints ?? prev.constraints,
+          verifyGas: res.data.metrics.verifyGas ?? prev.verifyGas,
         }));
       }
 
@@ -213,6 +224,50 @@ export default function App() {
     }
 
     setLoadingAuth(false);
+  };
+
+  const demoExpired = async () => {
+    setLoadingExpired(true);
+    setExpiredResult(null);
+    try {
+      const res = await axios.post("http://localhost:3001/api/demo-expired");
+      setExpiredResult(res.data);
+      setAuditLog((prev) => [
+        {
+          id: Date.now(),
+          timestamp: new Date(),
+          operation: "Demo: Expired Credential",
+          scenario: "finance",
+          success: false,
+          gasUsed: null,
+          txHash: null,
+          proofMs: null,
+          witnessMs: null,
+          verifyMs: null,
+          verified: false,
+          reason: res.data.reason ?? null,
+          error: null,
+        },
+        ...prev,
+      ]);
+    } catch (err) {
+      const errMsg = err?.response?.data?.error || err.message;
+      setExpiredResult({ ok: false, error: errMsg });
+    }
+    setLoadingExpired(false);
+  };
+
+  const runPlonkBenchmark = async () => {
+    setLoadingBenchmark(true);
+    setBenchmarkResult(null);
+    try {
+      const res = await axios.post("http://localhost:3001/api/benchmark-plonk");
+      setBenchmarkResult(res.data);
+    } catch (err) {
+      const errMsg = err?.response?.data?.error || err.message;
+      setBenchmarkResult({ ok: false, error: errMsg });
+    }
+    setLoadingBenchmark(false);
   };
 
   const isAuthorized = authResult?.ok === true && authResult?.verified === true;
@@ -357,6 +412,15 @@ export default function App() {
             <div className="metric-box">
               <span className="result-label">Authorization Constraints: </span>
               <span className="result-value">{liveMetrics.constraints}</span>
+            </div>
+
+            <div className="metric-box">
+              <span className="result-label">Verification Gas (est.): </span>
+              <span className="result-value">
+                {liveMetrics.verifyGas
+                  ? Number(liveMetrics.verifyGas).toLocaleString()
+                  : "~318k"}
+              </span>
             </div>
           </div>
         </section>
@@ -513,6 +577,52 @@ export default function App() {
               {loadingAuth ? "Authorizing..." : modeButton}
             </button>
 
+            {isFinance && issueResult && (
+              <button
+                className="secondary-button"
+                style={{ marginTop: "0.5rem" }}
+                onClick={() => {
+                  setRequestedAmount(200);
+                  setTimeout(() => {
+                    axios
+                      .post("http://localhost:3001/api/authorize-payment", {
+                        mode,
+                        credential: issueResult.credential,
+                        commitment: issueResult.commitment,
+                        requestedAmount: 200,
+                        currentTime: Math.floor(Date.now() / 1000),
+                      })
+                      .then((res) => {
+                        setAuthResult(res.data);
+                        setAuditLog((prev) => [
+                          {
+                            id: Date.now(),
+                            timestamp: new Date(),
+                            operation: "Authorize Payment",
+                            scenario: mode,
+                            success: false,
+                            gasUsed: null,
+                            txHash: null,
+                            proofMs: null,
+                            witnessMs: null,
+                            verifyMs: null,
+                            verified: false,
+                            reason: res.data.reason ?? null,
+                            error: null,
+                          },
+                          ...prev,
+                        ]);
+                      })
+                      .catch((err) => {
+                        setAuthResult({ ok: false, error: err?.response?.data?.error || err.message, reason: "server_error" });
+                      });
+                  }, 0);
+                }}
+              >
+                Demo: Exceed Limit ($200 &gt; max $100)
+              </button>
+            )}
+
             {!issueResult && (
               <p className="hint">Issue a credential first to enable this step.</p>
             )}
@@ -605,6 +715,127 @@ export default function App() {
             </div>
           </section>
         </div>
+
+        <section className="agent-tasks-card">
+          <div className="agent-tasks-header">
+            <div>
+              <p className="eyebrow">Edge Case Demo</p>
+              <h3>Expired Credential Rejection</h3>
+            </div>
+            <span className="pill neutral">Auto-expiry</span>
+          </div>
+          <p className="card-text">
+            Issues a credential with an expiry timestamp set 1 hour in the past, then
+            attempts to generate a proof for it. The circuit rejects at witness generation
+            because <code>currentTime &gt; expiry</code> — no valid proof can be produced.
+          </p>
+          <button
+            className="secondary-button"
+            onClick={demoExpired}
+            disabled={loadingExpired}
+          >
+            {loadingExpired ? "Running..." : "Demo: Expired Credential"}
+          </button>
+
+          {expiredResult && (
+            <div className={`status-card ${expiredResult.ok && !expiredResult.verified ? "warning" : expiredResult.ok ? "success" : "error"}`} style={{ marginTop: "1rem" }}>
+              <div className="status-header">
+                <div className="status-icon">
+                  {expiredResult.ok && !expiredResult.verified ? "⚠️" : expiredResult.ok ? "✅" : "❌"}
+                </div>
+                <div>
+                  <h3>
+                    {expiredResult.reason === "expired_credential"
+                      ? "Credential Expired — Proof Rejected"
+                      : expiredResult.ok
+                      ? "Unexpected: Proof Passed"
+                      : "Server Error"}
+                  </h3>
+                  <p>
+                    {expiredResult.reason === "expired_credential"
+                      ? "The circuit enforces expiry: witness generation failed because currentTime > expiry. The agent cannot prove authorization."
+                      : expiredResult.error || ""}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className="agent-tasks-card">
+          <div className="agent-tasks-header">
+            <div>
+              <p className="eyebrow">Proof System Benchmark</p>
+              <h3>Groth16 vs PLONK</h3>
+            </div>
+            <span className="pill accent">Requires setup:circuit</span>
+          </div>
+          <p className="card-text">
+            Generates the same proof using both Groth16 and PLONK on identical inputs and
+            compares proving time and proof size. PLONK requires no per-circuit trusted
+            setup but produces larger proofs. Verification is done off-chain via snarkjs.
+            Run <code>npm run setup:circuit</code> from the project root to generate PLONK keys first.
+          </p>
+          <button
+            className="secondary-button"
+            onClick={runPlonkBenchmark}
+            disabled={loadingBenchmark}
+          >
+            {loadingBenchmark ? "Benchmarking..." : "Run PLONK Benchmark"}
+          </button>
+
+          {benchmarkResult && !benchmarkResult.ok && (
+            <div className="status-card error" style={{ marginTop: "1rem" }}>
+              <div className="status-header">
+                <div className="status-icon">❌</div>
+                <div>
+                  <h3>Benchmark Failed</h3>
+                  <p>{benchmarkResult.error}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {benchmarkResult && benchmarkResult.ok && (
+            <div style={{ marginTop: "1rem" }}>
+              <div className="metrics-grid">
+                <div className="metric-box">
+                  <span className="result-label">Witness Generation: </span>
+                  <span className="result-value">{benchmarkResult.witnessMs} ms (shared)</span>
+                </div>
+                <div className="metric-box">
+                  <span className="result-label">Groth16 Proof Time: </span>
+                  <span className="result-value">{benchmarkResult.groth16.proofMs} ms</span>
+                </div>
+                <div className="metric-box">
+                  <span className="result-label">PLONK Proof Time: </span>
+                  <span className="result-value">{benchmarkResult.plonk.proofMs} ms</span>
+                </div>
+                <div className="metric-box">
+                  <span className="result-label">Groth16 Proof Size: </span>
+                  <span className="result-value">{benchmarkResult.groth16.proofSize} bytes</span>
+                </div>
+                <div className="metric-box">
+                  <span className="result-label">PLONK Proof Size: </span>
+                  <span className="result-value">{benchmarkResult.plonk.proofSize} bytes</span>
+                </div>
+                <div className="metric-box">
+                  <span className="result-label">Groth16 Verified: </span>
+                  <span className="result-value">{benchmarkResult.groth16.verified ? "✓ yes" : "✗ no"}</span>
+                </div>
+                <div className="metric-box">
+                  <span className="result-label">PLONK Verified: </span>
+                  <span className="result-value">{benchmarkResult.plonk.verified ? "✓ yes" : "✗ no"}</span>
+                </div>
+              </div>
+              <p className="hint" style={{ marginTop: "0.75rem" }}>
+                Groth16 requires a per-circuit trusted setup but has constant-size proofs (~200 bytes JSON).
+                PLONK is setup-free but proofs are larger. On-chain Groth16 verification uses the deployed
+                contract; PLONK verification here is off-chain only.
+              </p>
+            </div>
+          )}
+        </section>
 
         <section className="nonce-note">
           <p className="eyebrow">Implementation Note</p>

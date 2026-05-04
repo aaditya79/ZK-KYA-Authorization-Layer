@@ -18,10 +18,10 @@ function loadArtifact(solFile, contractName) {
   return JSON.parse(fs.readFileSync(artifactPath, "utf8"));
 }
 
-async function deployContract(wallet, solFile, contractName, constructorArgs = []) {
+async function deployContract(wallet, solFile, contractName, constructorArgs = [], nonce) {
   const artifact = loadArtifact(solFile, contractName);
   const factory = new ContractFactory(artifact.abi, artifact.bytecode, wallet);
-  const contract = await factory.deploy(...constructorArgs);
+  const contract = await factory.deploy(...constructorArgs, { nonce });
   await contract.waitForDeployment();
   return await contract.getAddress();
 }
@@ -30,12 +30,17 @@ async function main() {
   const provider = new JsonRpcProvider(RPC_URL);
   const wallet = new Wallet(PRIVATE_KEY, provider);
 
+  // Fetch once and increment manually to avoid ethers v6 nonce caching race condition.
+  let nonce = await wallet.getNonce();
+
   // Verifier must be deployed first — its address is passed to the registry constructor.
   console.log("Deploying Groth16Verifier...");
   const verifierAddress = await deployContract(
     wallet,
     "AuthorizationVerifier",
-    "Groth16Verifier"
+    "Groth16Verifier",
+    [],
+    nonce++
   );
   console.log("Groth16Verifier:", verifierAddress);
 
@@ -44,7 +49,8 @@ async function main() {
     wallet,
     "CredentialRegistry",
     "CredentialRegistry",
-    [verifierAddress]
+    [verifierAddress],
+    nonce++
   );
   console.log("CredentialRegistry:", registryAddress);
 

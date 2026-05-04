@@ -12,6 +12,7 @@ ZK-KYA introduces a new paradigm for agent authorization:
 - Credentials are **committed on-chain** using Poseidon hashing
 - Agents generate **zero-knowledge proofs (Groth16)** to prove authorization
 - Smart contracts verify proofs without exposing sensitive data
+- Invalid requests (exceeded limits, expired credentials) are **rejected at proof generation** — no valid witness can be produced
 
 This allows secure delegation of permissions in domains like **finance** and **healthcare**, while preserving privacy.
 
@@ -36,8 +37,11 @@ The system simulates a real-world authorization flow:
 - ⛓️ On-chain verification via Solidity smart contracts
 - 🤖 Agent-based request abstraction (finance + healthcare)
 - ⚡ Real-time proof generation + verification
-- 📊 Live metrics (gas, latency, proof size)
+- 📊 Live metrics (issuance gas, verification gas, proof size, latency, R1CS constraints)
 - 🎯 Task-level simulation (not just raw inputs)
+- ⚠️ Expired credential rejection — circuit enforces expiry at witness generation
+- 🚫 Exceeded-limit rejection — circuit enforces spending cap as a constraint
+- 📐 Groth16 vs PLONK benchmark — side-by-side proving time and proof size comparison
 
 ---
 
@@ -102,12 +106,15 @@ Agents do **not see raw credentials** — they only operate via proofs.
 
 | Metric | Value |
 |--------|-------|
-| Issuance Gas | ~53.9k |
-| Witness Generation | ~104 ms |
-| Proof Generation | ~500 ms |
-| On-chain Verification | ~16 ms |
-| Proof Size | ~807 bytes |
-| Constraints | ~890 |
+| Issuance Gas | ~56.9k |
+| Witness Generation | ~100 ms |
+| Groth16 Proof Generation | ~450 ms |
+| PLONK Proof Generation | ~2,360 ms |
+| On-chain Verify Call | ~16 ms |
+| Verification Gas (est.) | ~318k |
+| Groth16 Proof Size | ~800 bytes |
+| PLONK Proof Size | ~2,250 bytes |
+| R1CS Constraints | 890 |
 
 ---
 
@@ -144,12 +151,16 @@ npm run setup:circuit
 
 `npm run setup:circuit` does the following automatically:
 
-1. Downloads the Hermez Powers of Tau file (`powersOfTau28_hez_final_12.ptau`, ~288 MB, cached after first run)
+1. Generates a local Powers of Tau file (`powersOfTau28_hez_final_12.ptau`) using `snarkjs powersoftau` — no external download required
 2. Compiles `circuits/credentialAuthorization.circom` → `.r1cs`, `.wasm`, `.sym`
 3. Runs the Groth16 phase-2 ceremony → `circuits/keys/credentialAuthorization_final.zkey`
-4. Exports the verification key → `circuits/keys/verification_key.json`
+4. Exports the Groth16 verification key → `circuits/keys/verification_key.json`
+5. Runs PLONK setup (no per-circuit ceremony needed) → `circuits/keys/credentialAuthorization_plonk.zkey`
+6. Exports the PLONK verification key → `circuits/keys/plonk_verification_key.json`
 
 The build outputs land in `circuits/build/` and `circuits/keys/`, both of which are gitignored. **Do not start the backend until this step completes.**
+
+> **Note:** After every `npx hardhat node` restart, run `node scripts/deploy.cjs` and restart the backend — the chain resets and contracts must be redeployed. The circuit keys do not need to be regenerated.
 
 ---
 
