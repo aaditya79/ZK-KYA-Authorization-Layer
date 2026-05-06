@@ -29,6 +29,10 @@ The system simulates a real-world authorization flow:
 5. A smart contract verifies the proof
 6. The request is either **authorized or rejected**
 
+## 🖥️ Video Demonstration
+
+https://youtu.be/Qdqfr4XhGxo
+
 ---
 
 ## 🧠 Key Features
