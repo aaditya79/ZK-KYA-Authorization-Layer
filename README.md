@@ -188,7 +188,12 @@ cd ../frontend && npm install
 npm run setup:circuit
 ```
 
-**4. Start a local Hardhat node and deploy contracts**
+**4. Compile Solidity contracts** *(required before deploying)*
+```bash
+npx hardhat compile
+```
+
+**5. Start a local Hardhat node and deploy contracts**
 ```bash
 npx hardhat node          # in one terminal
 node scripts/deploy.cjs   # in another terminal (writes deployments.json)
