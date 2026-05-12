@@ -46,6 +46,7 @@ https://youtu.be/Qdqfr4XhGxo
 - ⚠️ Expired credential rejection — circuit enforces expiry at witness generation
 - 🚫 Exceeded-limit rejection — circuit enforces spending cap as a constraint
 - 📐 Groth16 vs PLONK benchmark — side-by-side proving time and proof size comparison
+- ✅ Test suite — contract tests (Hardhat/viem) and circuit constraint tests (snarkjs)
 
 ---
 
@@ -128,11 +129,14 @@ Agents do **not see raw credentials** — they only operate via proofs.
 zk-kya/
 ├── frontend/        # React UI
 ├── backend/         # Express API
-├── contracts/       # Solidity contracts
+├── contracts/       # Solidity contracts (including MockVerifier for tests)
 ├── circuits/        # Circom ZK circuits
 ├── scripts/         # Proof + credential scripts
 ├── ignition/        # Deployment modules
 ├── artifacts/       # Contract artifacts
+├── test/
+│   ├── CredentialRegistry.ts  # Contract tests (Hardhat/viem)
+│   └── circuit.cjs            # Circuit constraint tests (snarkjs)
 └── README.md
 ```
 
@@ -168,6 +172,52 @@ The build outputs land in `circuits/build/` and `circuits/keys/`, both of which 
 
 ---
 
+## 🧪 Testing
+
+The project has two test suites that can be run independently.
+
+### Contract tests (no circuit build required)
+
+Tests `CredentialRegistry.sol` logic using Hardhat's in-process simulated network and a `MockVerifier` contract in place of the real Groth16 verifier.
+
+```bash
+npx hardhat test
+```
+
+Covers:
+- Valid credential issuance (signature verified, commitment stored)
+- Rejection of wrong-signer signatures (`"invalid signature"`)
+- Rejection of duplicate commitments (`"commitment already exists"`)
+- `verifyProof` short-circuits `false` for unregistered commitments
+- `verifyProof` delegates to the verifier when commitment is registered
+
+### Circuit constraint tests (requires `npm run setup:circuit`)
+
+Tests that the `credentialAuthorization` circuit enforces each constraint by running witness generation and asserting that invalid inputs trigger `Assert Failed`.
+
+```bash
+node --test test/circuit.cjs
+```
+
+Covers:
+- Valid inputs produce a witness successfully
+- Expired credential is rejected (`currentTime > expiry`)
+- Over-limit request is rejected (`requestedAmount > maxAmount`)
+- Wrong service is rejected (`requestedService != service`)
+- Wrong action is rejected (`requestedAction != action`)
+- Tampered commitment is rejected (preimage mismatch)
+- Boundary cases: `amount == maxAmount` and `currentTime == expiry` are accepted
+
+### Run both
+
+```bash
+npm test
+```
+
+> **Node.js version:** Hardhat v3 requires Node.js 18.19+ or 20.6+. If your default `node` is older, prefix commands with the path to a supported version (e.g., `PATH="/opt/homebrew/bin:$PATH" npx hardhat test`).
+
+---
+
 ## ⚙️ Setup
 
 **1. Clone repo**
@@ -188,19 +238,24 @@ cd ../frontend && npm install
 npm run setup:circuit
 ```
 
-**4. Start a local Hardhat node and deploy contracts**
+**4. Compile Solidity contracts** *(required before deploying)*
+```bash
+npx hardhat compile
+```
+
+**5. Start a local Hardhat node and deploy contracts**
 ```bash
 npx hardhat node          # in one terminal
 node scripts/deploy.cjs   # in another terminal (writes deployments.json)
 ```
 
-**5. Run backend**
+**6. Run backend**
 ```bash
 cd backend
 node server.cjs
 ```
 
-**6. Run frontend**
+**7. Run frontend**
 ```bash
 cd frontend
 npm run dev
@@ -248,4 +303,4 @@ We built a **privacy-preserving credential delegation layer** that allows AI age
 - Jie Wang
 - Rujing Li
 
-*Columbia University — MS Data Science*
+*Columbia University — MS Computer Science, MS Data Science*

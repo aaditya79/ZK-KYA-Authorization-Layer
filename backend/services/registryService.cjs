@@ -9,7 +9,8 @@ const PRIVATE_KEY =
 const REGISTRY_ABI = [
   "function issueCredential(address issuer,address agent,uint256 service,uint256 action,uint256 maxAmount,uint256 expiry,uint256 nonce,uint256 commitment,bytes signature) external",
   "function isRegistered(uint256 commitment) external view returns (bool)",
-  "function verifyProof(uint[2] calldata _pA,uint[2][2] calldata _pB,uint[2] calldata _pC,uint[5] calldata _pubSignals) external view returns (bool)",
+  "function isNullifierUsed(bytes32 nullifier) external view returns (bool)",
+  "function verifyProof(uint[2] calldata _pA,uint[2][2] calldata _pB,uint[2] calldata _pC,uint[5] calldata _pubSignals) external returns (bool)",
 ];
 
 function getRegistryContract() {
