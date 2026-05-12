@@ -175,6 +175,64 @@ describe("CredentialRegistry", async function () {
     assert.equal(result, true);
   });
 
+  // ── replay protection ─────────────────────────────────────────────────────
+
+  it("blocks replay: same authorization cannot be submitted twice", async function () {
+    // COMMITMENT_A is registered. Send a write tx to record the nullifier.
+    const pubSignals = [
+      COMMITMENT_A,
+      service,
+      action,
+      50n,
+      BigInt(Math.floor(Date.now() / 1000)),
+    ] as readonly [bigint, bigint, bigint, bigint, bigint];
+
+    await registry.write.verifyProof([
+      [0n, 0n],
+      [
+        [0n, 0n],
+        [0n, 0n],
+      ],
+      [0n, 0n],
+      pubSignals,
+    ]);
+
+    // Second call with the same (commitment, service, action, amount) → nullifier already used.
+    const result = await registry.read.verifyProof([
+      [0n, 0n],
+      [
+        [0n, 0n],
+        [0n, 0n],
+      ],
+      [0n, 0n],
+      pubSignals,
+    ]);
+    assert.equal(result, false);
+  });
+
+  it("allows a different amount after a nullifier is spent", async function () {
+    // The nullifier for (COMMITMENT_A, service, action, 50) is spent from the test above.
+    // A request for a different amount produces a different nullifier and should succeed.
+    const pubSignalsNewAmount = [
+      COMMITMENT_A,
+      service,
+      action,
+      75n, // different amount → different nullifier key
+      BigInt(Math.floor(Date.now() / 1000)),
+    ] as readonly [bigint, bigint, bigint, bigint, bigint];
+
+    const result = await registry.read.verifyProof([
+      [0n, 0n],
+      [
+        [0n, 0n],
+        [0n, 0n],
+      ],
+      [0n, 0n],
+      pubSignalsNewAmount,
+    ]);
+    assert.equal(result, true);
+  });
+
   it("verifyProof returns false for a registered commitment when the verifier rejects", async function () {
     // Deploy a MockVerifier that always returns false and a separate registry.
     const rejectingVerifier = await viem.deployContract("MockVerifier", [

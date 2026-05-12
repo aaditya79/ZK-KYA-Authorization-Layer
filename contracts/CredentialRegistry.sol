@@ -12,12 +12,20 @@ interface IGroth16Verifier {
 
 contract CredentialRegistry {
     mapping(uint256 => bool) public registeredCommitments;
+    // Nullifier key: keccak256(commitment, requestedService, requestedAction, requestedAmount).
+    // Marked true when a valid proof is accepted, preventing replay of the same authorization.
+    mapping(bytes32 => bool) public usedNullifiers;
     address public verifier;
 
     event CredentialIssued(
         address indexed issuer,
         address indexed agent,
         uint256 indexed commitment
+    );
+
+    event AuthorizationUsed(
+        uint256 indexed commitment,
+        bytes32 indexed nullifier
     );
 
     constructor(address _verifier) {
@@ -137,22 +145,43 @@ contract CredentialRegistry {
         return registeredCommitments[commitment];
     }
 
+    function isNullifierUsed(bytes32 nullifier) external view returns (bool) {
+        return usedNullifiers[nullifier];
+    }
+
     // Public signals layout (matches credentialAuthorization.circom):
     //   [0] commitment
     //   [1] requestedService
     //   [2] requestedAction
     //   [3] requestedAmount
     //   [4] currentTime
+    //
+    // Non-view: records the nullifier on-chain when the proof is accepted,
+    // preventing replay of the same (commitment, service, action, amount) tuple.
     function verifyProof(
         uint[2] calldata _pA,
         uint[2][2] calldata _pB,
         uint[2] calldata _pC,
         uint[5] calldata _pubSignals
-    ) external view returns (bool) {
+    ) external returns (bool) {
         uint256 commitment = _pubSignals[0];
-        if (!registeredCommitments[commitment]) {
-            return false;
+        // currentTime (_pubSignals[4]) is intentionally excluded from the nullifier
+        // so the key is stable across different proof timestamps.
+        bytes32 nullifier = keccak256(abi.encode(
+            _pubSignals[0], // commitment
+            _pubSignals[1], // requestedService
+            _pubSignals[2], // requestedAction
+            _pubSignals[3]  // requestedAmount
+        ));
+
+        if (!registeredCommitments[commitment]) return false;
+        if (usedNullifiers[nullifier]) return false;
+
+        bool ok = IGroth16Verifier(verifier).verifyProof(_pA, _pB, _pC, _pubSignals);
+        if (ok) {
+            usedNullifiers[nullifier] = true;
+            emit AuthorizationUsed(commitment, nullifier);
         }
-        return IGroth16Verifier(verifier).verifyProof(_pA, _pB, _pC, _pubSignals);
+        return ok;
     }
 }

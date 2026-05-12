@@ -205,7 +205,8 @@ router.post("/authorize-payment", async (req, res) => {
     const { pA, pB, pC, pubSignals } = callData;
 
     const verifyStart = Date.now();
-    const verified = await registry.verifyProof(pA, pB, pC, pubSignals);
+    // staticCall returns the bool without modifying state.
+    const verified = await registry.verifyProof.staticCall(pA, pB, pC, pubSignals);
     const verifyMs = Date.now() - verifyStart;
 
     let verifyGas = null;
@@ -213,6 +214,12 @@ router.post("/authorize-payment", async (req, res) => {
       const gasEstimate = await registry.verifyProof.estimateGas(pA, pB, pC, pubSignals);
       verifyGas = gasEstimate.toString();
     } catch (_) {}
+
+    // Send the actual transaction to record the nullifier on-chain.
+    if (verified) {
+      const tx = await registry.verifyProof(pA, pB, pC, pubSignals);
+      await tx.wait();
+    }
 
     const response = {
       ok: true,
@@ -280,7 +287,11 @@ router.post("/demo-expired", async (_req, res) => {
     try {
       const { callData, proofSize, witnessMs, proofMs } = await runGroth16Proof(authInput, "demo_expired");
       const { pA, pB, pC, pubSignals } = callData;
-      const verified = await registry.verifyProof(pA, pB, pC, pubSignals);
+      const verified = await registry.verifyProof.staticCall(pA, pB, pC, pubSignals);
+      if (verified) {
+        const tx = await registry.verifyProof(pA, pB, pC, pubSignals);
+        await tx.wait();
+      }
       return res.json({ ok: true, verified, reason: verified ? null : "proof_rejected", metrics: { witnessMs, proofMs, proofSize } });
     } catch (proofErr) {
       if (isConstraintError(proofErr)) {
